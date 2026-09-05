@@ -32,23 +32,36 @@ jobs:
             -DANDROID_STL=c++_static \
             -DCMAKE_BUILD_TYPE=Release \
             ..
-          cmake --build . --verbose -j$(nproc)
-          test -f libdock_sink.so || (echo "Build failed: so not found" && ls -la && exit 1)
+          cmake --build . -j$(nproc)
+          test -f libdock_sink.so || (echo "SO not found" && ls -la && exit 1)
           ls -lh libdock_sink.so
 
-      - name: Package module
+      - name: Package module zip
         run: |
-          mkdir -p out/lib/arm64-v8a
-          mkdir -p out/META-INF/com/google/android
-          cp native/build/libdock_sink.so out/lib/arm64-v8a/
-          cp module.prop out/
-          cp zn_modules.txt out/
-          if [ -f config.prop.example ]; then cp config.prop.example out/; fi
-          echo "#MAGISK" > out/META-INF/com/google/android/updater-script
-          printf '%s\n' '#!/sbin/sh' 'OUTFD=${2:-1}' 'ZIPFILE=$3' 'ui_print() { echo "ui_print $1" > /proc/self/fd/$OUTFD; echo "ui_print" > /proc/self/fd/$OUTFD; }' 'ui_print "- HyperOSDockSink installing..."' 'MODDIR=/data/adb/modules/HyperOSDockSink' 'mkdir -p "$MODDIR"' 'unzip -o "$ZIPFILE" -d "$MODDIR"' 'chmod 755 "$MODDIR/lib/arm64-v8a/libdock_sink.so" 2>/dev/null || true' 'ui_print "- Done. Please reboot."' > out/META-INF/com/google/android/update-binary
-          chmod +x out/META-INF/com/google/android/update-binary
-          cd out
+          # Standard Magisk/KSU module layout (all at zip root)
+          mkdir -p package/lib/arm64-v8a
+          mkdir -p package/META-INF/com/google/android
+
+          cp native/build/libdock_sink.so package/lib/arm64-v8a/
+          cp module.prop package/
+          cp zn_modules.txt package/
+          cp META-INF/com/google/android/update-binary package/META-INF/com/google/android/
+          cp META-INF/com/google/android/updater-script package/META-INF/com/google/android/
+          if [ -f config.prop.example ]; then cp config.prop.example package/; fi
+
+          chmod 755 package/META-INF/com/google/android/update-binary
+          chmod 755 package/lib/arm64-v8a/libdock_sink.so
+
+          # Verify required files exist
+          test -f package/module.prop
+          test -f package/zn_modules.txt
+          test -f package/lib/arm64-v8a/libdock_sink.so
+          test -f package/META-INF/com/google/android/update-binary
+
+          cd package
           zip -r9 ../HyperOSDockSink.zip .
+          echo "=== Zip contents ==="
+          unzip -l ../HyperOSDockSink.zip
           ls -lh ../HyperOSDockSink.zip
 
       - name: Upload artifact
