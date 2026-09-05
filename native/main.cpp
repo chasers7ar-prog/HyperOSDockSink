@@ -8,17 +8,16 @@
 #define LOG_TAG "DockSink"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 
 static const ZygiskNextAPI *g_api = nullptr;
 
 struct Config {
-    int enable = 1;
-    int sink_dp = 24;
-    int extra_bottom_pad = 0;
+    int enable;
+    int sink_dp;
+    int extra_bottom_pad;
 };
 
-static Config g_cfg;
+static Config g_cfg = {1, 24, 0};
 
 static void load_config() {
     const char *paths[] = {
@@ -49,9 +48,9 @@ static void load_config() {
     LOGI("No config found, using defaults: sink_dp=%d", g_cfg.sink_dp);
 }
 
-static void *find_symbol(const char *lib, const char *name, bool prefix = false) {
+static void *find_symbol(const char *lib, const char *name, bool prefix) {
     if (!g_api) return nullptr;
-    auto *res = g_api->newSymbolResolver(lib, nullptr);
+    ZnSymbolResolver *res = g_api->newSymbolResolver(lib, nullptr);
     if (!res) return nullptr;
     size_t size = 0;
     void *addr = g_api->symbolLookup(res, name, prefix, &size);
@@ -70,8 +69,11 @@ static bool dump_cb(const char *name, void *addr, size_t size, void *data) {
 
 static void dump_symbols_containing(const char *lib, const char *keyword) {
     if (!g_api) return;
-    auto *res = g_api->newSymbolResolver(lib, nullptr);
-    if (!res) return;
+    ZnSymbolResolver *res = g_api->newSymbolResolver(lib, nullptr);
+    if (!res) {
+        LOGI("newSymbolResolver failed for %s", lib);
+        return;
+    }
     LOGI("Dumping symbols in %s containing \"%s\":", lib, keyword);
     g_api->forEachSymbols(res, dump_cb, (void *)keyword);
     g_api->freeSymbolResolver(res);
@@ -85,7 +87,6 @@ static void do_dock_sink() {
 
     LOGI("=== Starting Dock Sink (sink_dp=%d) ===", g_cfg.sink_dp);
 
-    // Key libraries identified from APK analysis
     const char *libs[] = {
         "libapp.so",
         "libapp_launcher.so",
@@ -93,10 +94,9 @@ static void do_dock_sink() {
         nullptr
     };
 
-    // High-value keywords from static analysis of the provided APK
     const char *keywords[] = {
         "dock", "Dock", "Hotseat", "hotseat",
-        "padding", "Padding", "PaddingTop", "PaddingBottom",
+        "padding", "Padding",
         "height", "Height", "Inset", "inset",
         "bounds", "Bounds",
         nullptr
@@ -108,17 +108,7 @@ static void do_dock_sink() {
         }
     }
 
-    // TODO: After Frida / Ghidra provides concrete function addresses or
-    // offsets for the current build (RELEASE-8.01.02.6236), add real hooks:
-    //
-    // Example (placeholder):
-    // void *addr = find_symbol("libapp_launcher.so", "some_real_function");
-    // if (addr) {
-    //     static void* (*orig)(...) = nullptr;
-    //     g_api->inlineHook(addr, (void*)my_hook_func, (void**)&orig);
-    // }
-
-    LOGI("Analysis-based symbol dump finished. Waiting for concrete offsets from device Frida/Ghidra.");
+    LOGI("Symbol dump finished. Waiting for concrete offsets from Frida/Ghidra.");
 }
 
 static void on_app_specialized(const ZnHyosAppSpecializeArgs *args) {
@@ -132,12 +122,10 @@ static void on_app_specialized(const ZnHyosAppSpecializeArgs *args) {
     do_dock_sink();
 }
 
-static const ZygiskNextHyosModule hyos_module = {
-    .target_api_version = ZYGISK_NEXT_HYOS_API_VERSION,
-    .onAppSpecialized = on_app_specialized,
-};
+static ZygiskNextHyosModule hyos_module;
 
 static void on_module_loaded(void *self_handle, const ZygiskNextAPI *api) {
+    (void)self_handle;
     g_api = api;
 
     const ZygiskNextRuntime *runtime = api->getRuntime();
@@ -147,6 +135,9 @@ static void on_module_loaded(void *self_handle, const ZygiskNextAPI *api) {
         LOGI("Not Hyos runtime, skip");
         return;
     }
+
+    hyos_module.target_api_version = ZYGISK_NEXT_HYOS_API_VERSION;
+    hyos_module.onAppSpecialized = on_app_specialized;
 
     if (runtime->registerModule(&hyos_module) != ZN_SUCCESS) {
         LOGE("Failed to register Hyos module");
@@ -158,6 +149,6 @@ static void on_module_loaded(void *self_handle, const ZygiskNextAPI *api) {
 
 extern "C" __attribute__((visibility("default")))
 ZygiskNextModule zn_module = {
-    .target_api_version = ZYGISK_NEXT_API_VERSION,
-    .onModuleLoaded = on_module_loaded,
+    ZYGISK_NEXT_API_VERSION,
+    on_module_loaded
 };
