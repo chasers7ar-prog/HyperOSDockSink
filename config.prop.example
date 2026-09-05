@@ -1,0 +1,10 @@
+# HyperOSDockSink config
+# 复制为 /data/adb/modules/HyperOSDockSink/config.prop 后重启桌面生效
+
+enable=1
+
+# Dock 下沉距离（dp）
+sink_dp=24
+
+# 额外底部 padding（px，可选）
+extra_bottom_pad=0

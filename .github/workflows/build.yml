@@ -31,23 +31,44 @@ jobs:
                 -DCMAKE_BUILD_TYPE=Release \
                 ..
           cmake --build . -j$(nproc)
+          ls -l
 
-      - name: Prepare module
+      - name: Prepare Magisk / Zygisk Next module
         run: |
           mkdir -p out/lib/arm64-v8a
           cp native/build/libdock_sink.so out/lib/arm64-v8a/
           cp module.prop zn_modules.txt out/
-          # Magisk module structure
+          cp config.prop.example out/
+
           mkdir -p out/META-INF/com/google/android
-          cat > out/META-INF/com/google/android/updater-script << 'EOF'
-#MAGISK
-EOF
-          # Simple update-binary placeholder (users can replace with full Magisk one)
+          # Magisk module marker
+          echo "#MAGISK" > out/META-INF/com/google/android/updater-script
+
+          # Minimal but functional update-binary
           cat > out/META-INF/com/google/android/update-binary << 'EOF'
 #!/sbin/sh
-# Magisk module installer placeholder
-# Please use a proper Magisk module template for production
-ui_print "HyperOSDockSink installed"
+
+OUTFD=$2
+ZIPFILE=$3
+
+ui_print() {
+  echo "ui_print $1" > /proc/self/fd/$OUTFD
+  echo "ui_print" > /proc/self/fd/$OUTFD
+}
+
+ui_print "- HyperOSDockSink installing..."
+
+# Magisk / KernelSU / APatch module path
+MODDIR=/data/adb/modules/HyperOSDockSink
+mkdir -p $MODDIR
+
+unzip -o "$ZIPFILE" -d $MODDIR >&2
+
+# Ensure permissions
+chmod 755 $MODDIR/lib/arm64-v8a/libdock_sink.so 2>/dev/null || true
+
+ui_print "- Done. Reboot required."
+ui_print "- Edit /data/adb/modules/HyperOSDockSink/config.prop if needed"
 EOF
           chmod +x out/META-INF/com/google/android/update-binary
 
@@ -55,6 +76,7 @@ EOF
         run: |
           cd out
           zip -r9 ../HyperOSDockSink-v1.0.0.zip .
+          ls -lh ../HyperOSDockSink-v1.0.0.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
