@@ -39,28 +39,14 @@ jobs:
       - name: Package module
         run: |
           mkdir -p out/lib/arm64-v8a
+          mkdir -p out/META-INF/com/google/android
           cp native/build/libdock_sink.so out/lib/arm64-v8a/
           cp module.prop out/
           cp zn_modules.txt out/
-          [ -f config.prop.example ] && cp config.prop.example out/ || true
-
-          mkdir -p out/META-INF/com/google/android
+          if [ -f config.prop.example ]; then cp config.prop.example out/; fi
           echo "#MAGISK" > out/META-INF/com/google/android/updater-script
-
-          cat > out/META-INF/com/google/android/update-binary << 'SCRIPT'
-#!/sbin/sh
-OUTFD=${2:-1}
-ZIPFILE=$3
-ui_print() { echo "ui_print $1" > /proc/self/fd/$OUTFD; echo "ui_print" > /proc/self/fd/$OUTFD; }
-ui_print "- HyperOSDockSink installing..."
-MODDIR=/data/adb/modules/HyperOSDockSink
-mkdir -p "$MODDIR"
-unzip -o "$ZIPFILE" -d "$MODDIR"
-chmod 755 "$MODDIR/lib/arm64-v8a/libdock_sink.so" 2>/dev/null || true
-ui_print "- Done. Please reboot."
-SCRIPT
+          printf '%s\n' '#!/sbin/sh' 'OUTFD=${2:-1}' 'ZIPFILE=$3' 'ui_print() { echo "ui_print $1" > /proc/self/fd/$OUTFD; echo "ui_print" > /proc/self/fd/$OUTFD; }' 'ui_print "- HyperOSDockSink installing..."' 'MODDIR=/data/adb/modules/HyperOSDockSink' 'mkdir -p "$MODDIR"' 'unzip -o "$ZIPFILE" -d "$MODDIR"' 'chmod 755 "$MODDIR/lib/arm64-v8a/libdock_sink.so" 2>/dev/null || true' 'ui_print "- Done. Please reboot."' > out/META-INF/com/google/android/update-binary
           chmod +x out/META-INF/com/google/android/update-binary
-
           cd out
           zip -r9 ../HyperOSDockSink.zip .
           ls -lh ../HyperOSDockSink.zip
