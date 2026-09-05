@@ -1,0 +1,63 @@
+name: Build Module
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
+          add-to-path: true
+
+      - name: Build native library
+        run: |
+          cd native
+          mkdir -p build && cd build
+          cmake -DCMAKE_TOOLCHAIN_FILE=${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
+                -DANDROID_ABI=arm64-v8a \
+                -DANDROID_PLATFORM=android-35 \
+                -DCMAKE_BUILD_TYPE=Release \
+                ..
+          cmake --build . -j$(nproc)
+
+      - name: Prepare module
+        run: |
+          mkdir -p out/lib/arm64-v8a
+          cp native/build/libdock_sink.so out/lib/arm64-v8a/
+          cp module.prop zn_modules.txt out/
+          # Magisk module structure
+          mkdir -p out/META-INF/com/google/android
+          cat > out/META-INF/com/google/android/updater-script << 'EOF'
+#MAGISK
+EOF
+          # Simple update-binary placeholder (users can replace with full Magisk one)
+          cat > out/META-INF/com/google/android/update-binary << 'EOF'
+#!/sbin/sh
+# Magisk module installer placeholder
+# Please use a proper Magisk module template for production
+ui_print "HyperOSDockSink installed"
+EOF
+          chmod +x out/META-INF/com/google/android/update-binary
+
+      - name: Pack zip
+        run: |
+          cd out
+          zip -r9 ../HyperOSDockSink-v1.0.0.zip .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HyperOSDockSink-module
+          path: HyperOSDockSink-v1.0.0.zip

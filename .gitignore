@@ -1,0 +1,8 @@
+native/build/
+*.so
+*.o
+*.a
+out/
+.idea/
+*.iml
+.DS_Store

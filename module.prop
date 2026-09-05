@@ -1,0 +1,6 @@
+id=HyperOSDockSink
+name=HyperOS 4 Dock Sink
+version=v1.0.0
+versionCode=1
+author=chasers7ar-prog
+description=HyperOS 4 Dock 下沉 & 布局调整 (Zygisk Next Hyos Runtime for hyos_spawner / com.miui.home)
