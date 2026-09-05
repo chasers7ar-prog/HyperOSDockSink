@@ -14,20 +14,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup NDK
-        uses: nttld/setup-ndk@v1
-        id: setup-ndk
+      - name: Setup JDK
+        uses: actions/setup-java@v4
         with:
-          ndk-version: r27c
-          add-to-path: true
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Android NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK via sdkmanager
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "ndk;27.0.12077973"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
+          ls -la $ANDROID_HOME/ndk/
 
       - name: Build native library
         run: |
+          export ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/27.0.12077973
+          echo "NDK path: $ANDROID_NDK_HOME"
+          ls "$ANDROID_NDK_HOME/build/cmake/"
           cd native
           mkdir -p build && cd build
-          cmake -DCMAKE_TOOLCHAIN_FILE=${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
+          cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
                 -DANDROID_ABI=arm64-v8a \
                 -DANDROID_PLATFORM=android-35 \
+                -DANDROID_STL=c++_static \
                 -DCMAKE_BUILD_TYPE=Release \
                 ..
           cmake --build . -j$(nproc)
@@ -38,13 +51,11 @@ jobs:
           mkdir -p out/lib/arm64-v8a
           cp native/build/libdock_sink.so out/lib/arm64-v8a/
           cp module.prop zn_modules.txt out/
-          cp config.prop.example out/
+          cp config.prop.example out/ 2>/dev/null || true
 
           mkdir -p out/META-INF/com/google/android
-          # Magisk module marker
           echo "#MAGISK" > out/META-INF/com/google/android/updater-script
 
-          # Minimal but functional update-binary
           cat > out/META-INF/com/google/android/update-binary << 'EOF'
 #!/sbin/sh
 
@@ -58,17 +69,15 @@ ui_print() {
 
 ui_print "- HyperOSDockSink installing..."
 
-# Magisk / KernelSU / APatch module path
 MODDIR=/data/adb/modules/HyperOSDockSink
 mkdir -p $MODDIR
 
 unzip -o "$ZIPFILE" -d $MODDIR >&2
 
-# Ensure permissions
 chmod 755 $MODDIR/lib/arm64-v8a/libdock_sink.so 2>/dev/null || true
 
 ui_print "- Done. Reboot required."
-ui_print "- Edit /data/adb/modules/HyperOSDockSink/config.prop if needed"
+ui_print "- Edit config.prop if needed"
 EOF
           chmod +x out/META-INF/com/google/android/update-binary
 
