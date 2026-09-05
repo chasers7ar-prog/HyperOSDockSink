@@ -3,8 +3,6 @@ name: Build Module
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -14,81 +12,62 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Install Android NDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install NDK via sdkmanager
+      - name: Download Android NDK
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "ndk;27.0.12077973"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
-          ls -la $ANDROID_HOME/ndk/
+          cd $HOME
+          curl -L -o ndk.zip https://dl.google.com/android/repository/android-ndk-r27c-linux.zip
+          unzip -q ndk.zip
+          echo "ANDROID_NDK_HOME=$HOME/android-ndk-r27c" >> $GITHUB_ENV
+          ls $HOME/android-ndk-r27c/build/cmake/
 
       - name: Build native library
         run: |
-          export ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/27.0.12077973
-          echo "NDK path: $ANDROID_NDK_HOME"
-          ls "$ANDROID_NDK_HOME/build/cmake/"
+          echo "Using NDK: $ANDROID_NDK_HOME"
           cd native
           mkdir -p build && cd build
-          cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-                -DANDROID_ABI=arm64-v8a \
-                -DANDROID_PLATFORM=android-35 \
-                -DANDROID_STL=c++_static \
-                -DCMAKE_BUILD_TYPE=Release \
-                ..
-          cmake --build . -j$(nproc)
-          ls -l
+          cmake \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-35 \
+            -DANDROID_STL=c++_static \
+            -DCMAKE_BUILD_TYPE=Release \
+            ..
+          cmake --build . --verbose -j$(nproc)
+          test -f libdock_sink.so || (echo "Build failed: so not found" && ls -la && exit 1)
+          ls -lh libdock_sink.so
 
-      - name: Prepare Magisk / Zygisk Next module
+      - name: Package module
         run: |
           mkdir -p out/lib/arm64-v8a
           cp native/build/libdock_sink.so out/lib/arm64-v8a/
-          cp module.prop zn_modules.txt out/
-          cp config.prop.example out/ 2>/dev/null || true
+          cp module.prop out/
+          cp zn_modules.txt out/
+          [ -f config.prop.example ] && cp config.prop.example out/ || true
 
           mkdir -p out/META-INF/com/google/android
           echo "#MAGISK" > out/META-INF/com/google/android/updater-script
 
-          cat > out/META-INF/com/google/android/update-binary << 'EOF'
+          cat > out/META-INF/com/google/android/update-binary << 'SCRIPT'
 #!/sbin/sh
-
-OUTFD=$2
+OUTFD=${2:-1}
 ZIPFILE=$3
-
-ui_print() {
-  echo "ui_print $1" > /proc/self/fd/$OUTFD
-  echo "ui_print" > /proc/self/fd/$OUTFD
-}
-
+ui_print() { echo "ui_print $1" > /proc/self/fd/$OUTFD; echo "ui_print" > /proc/self/fd/$OUTFD; }
 ui_print "- HyperOSDockSink installing..."
-
 MODDIR=/data/adb/modules/HyperOSDockSink
-mkdir -p $MODDIR
-
-unzip -o "$ZIPFILE" -d $MODDIR >&2
-
-chmod 755 $MODDIR/lib/arm64-v8a/libdock_sink.so 2>/dev/null || true
-
-ui_print "- Done. Reboot required."
-ui_print "- Edit config.prop if needed"
-EOF
+mkdir -p "$MODDIR"
+unzip -o "$ZIPFILE" -d "$MODDIR"
+chmod 755 "$MODDIR/lib/arm64-v8a/libdock_sink.so" 2>/dev/null || true
+ui_print "- Done. Please reboot."
+SCRIPT
           chmod +x out/META-INF/com/google/android/update-binary
 
-      - name: Pack zip
-        run: |
           cd out
-          zip -r9 ../HyperOSDockSink-v1.0.0.zip .
-          ls -lh ../HyperOSDockSink-v1.0.0.zip
+          zip -r9 ../HyperOSDockSink.zip .
+          ls -lh ../HyperOSDockSink.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: HyperOSDockSink-module
-          path: HyperOSDockSink-v1.0.0.zip
+          path: HyperOSDockSink.zip
+          if-no-files-found: error
