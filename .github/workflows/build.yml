@@ -18,11 +18,9 @@ jobs:
           curl -L -o ndk.zip https://dl.google.com/android/repository/android-ndk-r27c-linux.zip
           unzip -q ndk.zip
           echo "ANDROID_NDK_HOME=$HOME/android-ndk-r27c" >> $GITHUB_ENV
-          ls $HOME/android-ndk-r27c/build/cmake/
 
       - name: Build native library
         run: |
-          echo "Using NDK: $ANDROID_NDK_HOME"
           cd native
           mkdir -p build && cd build
           cmake \
@@ -33,40 +31,44 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             ..
           cmake --build . -j$(nproc)
-          test -f libdock_sink.so || (echo "SO not found" && ls -la && exit 1)
+          test -f libdock_sink.so
           ls -lh libdock_sink.so
 
-      - name: Package module zip
+      - name: Package module
         run: |
-          # Standard Magisk/KSU module layout (all at zip root)
+          rm -rf package HyperOSDockSink.zip
           mkdir -p package/lib/arm64-v8a
           mkdir -p package/META-INF/com/google/android
 
           cp native/build/libdock_sink.so package/lib/arm64-v8a/
           cp module.prop package/
           cp zn_modules.txt package/
+          cp customize.sh package/
           cp META-INF/com/google/android/update-binary package/META-INF/com/google/android/
-          cp META-INF/com/google/android/updater-script package/META-INF/com/google/android/
-          if [ -f config.prop.example ]; then cp config.prop.example package/; fi
+          echo "#MAGISK" > package/META-INF/com/google/android/updater-script
+          [ -f config.prop.example ] && cp config.prop.example package/
 
           chmod 755 package/META-INF/com/google/android/update-binary
+          chmod 755 package/customize.sh
           chmod 755 package/lib/arm64-v8a/libdock_sink.so
 
-          # Verify required files exist
-          test -f package/module.prop
-          test -f package/zn_modules.txt
-          test -f package/lib/arm64-v8a/libdock_sink.so
-          test -f package/META-INF/com/google/android/update-binary
-
+          # Must be zip root = module root (no outer folder)
           cd package
           zip -r9 ../HyperOSDockSink.zip .
-          echo "=== Zip contents ==="
-          unzip -l ../HyperOSDockSink.zip
-          ls -lh ../HyperOSDockSink.zip
+          cd ..
+
+          echo "======== ZIP LIST ========"
+          unzip -l HyperOSDockSink.zip
+          echo "=========================="
+
+          # Hard checks
+          unzip -l HyperOSDockSink.zip | grep -q "module.prop"
+          unzip -l HyperOSDockSink.zip | grep -q "zn_modules.txt"
+          unzip -l HyperOSDockSink.zip | grep -q "lib/arm64-v8a/libdock_sink.so"
+          unzip -l HyperOSDockSink.zip | grep -q "META-INF/com/google/android/update-binary"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: HyperOSDockSink-module
           path: HyperOSDockSink.zip
-          if-no-files-found: error

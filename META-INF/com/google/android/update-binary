@@ -1,47 +1,47 @@
 #!/sbin/sh
-
-#################
-# Initialization
-#################
+# Magisk / KernelSU compatible installer
 
 umask 022
-
-# echo before loading util_functions
-ui_print() { echo "$1"; }
-
-require_new_magisk() {
-  ui_print "*******************************"
-  ui_print " Please install Magisk v20.4+ or KernelSU "
-  ui_print "*******************************"
-  exit 1
-}
-
-#########################
-# Load util_functions.sh
-#########################
-
 OUTFD=$2
 ZIPFILE=$3
 
-mount /data 2>/dev/null
+ui_print() {
+  if [ -n "$OUTFD" ] && [ -e /proc/self/fd/$OUTFD ]; then
+    echo "ui_print $1" > /proc/self/fd/$OUTFD
+    echo "ui_print" > /proc/self/fd/$OUTFD
+  else
+    echo "$1"
+  fi
+}
 
-[ -f /data/adb/magisk/util_functions.sh ] && . /data/adb/magisk/util_functions.sh
-[ -f /data/adb/ksu/bin/busybox ] && export PATH=/data/adb/ksu/bin:$PATH
+ui_print "- HyperOSDockSink installing..."
 
-# Fallback minimal installer for KernelSU / APatch when util_functions missing
-if ! type install_module >/dev/null 2>&1; then
-  ui_print "- Using minimal installer (KernelSU/APatch)"
-  MODDIR=/data/adb/modules/HyperOSDockSink
-  rm -rf "$MODDIR"
-  mkdir -p "$MODDIR"
+# Detect module install path
+MODDIR=/data/adb/modules/HyperOSDockSink
+
+# Clean old install
+rm -rf "$MODDIR"
+mkdir -p "$MODDIR"
+
+# Extract everything to module dir
+unzip -o "$ZIPFILE" -x "META-INF/*" -d "$MODDIR"
+
+# Fallback if above fails (some recoveries)
+if [ ! -f "$MODDIR/module.prop" ]; then
   unzip -o "$ZIPFILE" -d "$MODDIR"
-  # clean installer leftovers if any
   rm -rf "$MODDIR/META-INF"
-  chmod 755 "$MODDIR/lib/arm64-v8a/libdock_sink.so" 2>/dev/null || true
-  ui_print "- HyperOSDockSink installed"
-  ui_print "- Please reboot"
-  exit 0
 fi
 
-install_module
+if [ ! -f "$MODDIR/module.prop" ]; then
+  ui_print "! module.prop not found after unzip"
+  ui_print "! Zip structure may be wrong"
+  exit 1
+fi
+
+chmod 755 "$MODDIR/lib/arm64-v8a/libdock_sink.so" 2>/dev/null || true
+chmod 644 "$MODDIR/module.prop" 2>/dev/null || true
+chmod 644 "$MODDIR/zn_modules.txt" 2>/dev/null || true
+
+ui_print "- Installed to $MODDIR"
+ui_print "- Please reboot"
 exit 0
